@@ -16,7 +16,7 @@ namespace crc32c {
 template <int N>
 constexpr inline uintptr_t RoundUp(uintptr_t pointer) {
   static_assert((N & (N - 1)) == 0, "N must be a power of two");
-  return (pointer + (N - 1)) & ~(N - 1);
+  return (pointer + (N - 1)) & ~static_cast<uintptr_t>(N - 1);
 }
 
 // Returns the smallest address >= the given address that is aligned to N bytes.
