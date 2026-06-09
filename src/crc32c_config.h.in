@@ -8,6 +8,9 @@
 // Define to 1 if building for a big-endian platform.
 #cmakedefine01 BYTE_ORDER_BIG_ENDIAN
 
+// Define to 1 when targeting RISC-V and using the portable implementation.
+#cmakedefine01 CRC32C_TARGET_RISCV
+
 // Define to 1 if the compiler has the __builtin_prefetch intrinsic.
 #cmakedefine01 HAVE_BUILTIN_PREFETCH
 

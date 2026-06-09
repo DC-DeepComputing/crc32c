@@ -69,6 +69,26 @@ option(CRC32C_BUILD_BENCHMARKS "Build CRC32C's benchmarks" ON)
 option(CRC32C_USE_GLOG "Build CRC32C's tests with Google Logging" ON)
 option(CRC32C_INSTALL "Install CRC32C's header and library" ON)
 
+set(CRC32C_TARGET_X86 0)
+set(CRC32C_TARGET_ARM64 0)
+set(CRC32C_TARGET_RISCV 0)
+set(CRC32C_TARGET_PROCESSOR "${CMAKE_SYSTEM_PROCESSOR}")
+if(NOT CRC32C_TARGET_PROCESSOR AND NOT CMAKE_CROSSCOMPILING)
+  set(CRC32C_TARGET_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+endif()
+string(TOLOWER "${CRC32C_TARGET_PROCESSOR}" CRC32C_TARGET_PROCESSOR_LOWER)
+string(TOLOWER "${CMAKE_CXX_COMPILER_TARGET}" CRC32C_CXX_COMPILER_TARGET_LOWER)
+if(CRC32C_TARGET_PROCESSOR_LOWER MATCHES "riscv" OR
+   CRC32C_CXX_COMPILER_TARGET_LOWER MATCHES "riscv")
+  set(CRC32C_TARGET_RISCV 1)
+elseif(CRC32C_TARGET_PROCESSOR_LOWER MATCHES "^(x86_64|amd64|i[3-6]86|x86)$" OR
+       CRC32C_CXX_COMPILER_TARGET_LOWER MATCHES "^(x86_64|amd64|i[3-6]86|x86)")
+  set(CRC32C_TARGET_X86 1)
+elseif(CRC32C_TARGET_PROCESSOR_LOWER MATCHES "^(aarch64|arm64)$" OR
+       CRC32C_CXX_COMPILER_TARGET_LOWER MATCHES "^(aarch64|arm64)")
+  set(CRC32C_TARGET_ARM64 1)
+endif()
+
 include(TestBigEndian)
 test_big_endian(BYTE_ORDER_BIG_ENDIAN)
 
@@ -96,88 +116,108 @@ int main() {
 
 # Check for _mm_prefetch support in the compiler.
 include(CheckCXXSourceCompiles)
-check_cxx_source_compiles("
-#if defined(_MSC_VER)
-#include <intrin.h>
-#else  // !defined(_MSC_VER)
-#include <xmmintrin.h>
-#endif  // defined(_MSC_VER)
+if(CRC32C_TARGET_X86)
+  check_cxx_source_compiles("
+  #if defined(_MSC_VER)
+  #include <intrin.h>
+  #else  // !defined(_MSC_VER)
+  #include <xmmintrin.h>
+  #endif  // defined(_MSC_VER)
 
-int main() {
-  char data = 0;
-  const char* address = &data;
-  _mm_prefetch(address, _MM_HINT_NTA);
-  return 0;
-}
-"  HAVE_MM_PREFETCH)
+  int main() {
+    char data = 0;
+    const char* address = &data;
+    _mm_prefetch(address, _MM_HINT_NTA);
+    return 0;
+  }
+  "  HAVE_MM_PREFETCH)
+else()
+  set(HAVE_MM_PREFETCH 0)
+endif()
 
 # Check for SSE4.2 support in the compiler.
-set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /arch:AVX")
-else(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -msse4.2")
-endif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-check_cxx_source_compiles("
-#if defined(_MSC_VER)
-#include <intrin.h>
-#else  // !defined(_MSC_VER)
-#include <cpuid.h>
-#include <nmmintrin.h>
-#endif  // defined(_MSC_VER)
+if(CRC32C_TARGET_X86)
+  set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /arch:AVX")
+  else(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -msse4.2")
+  endif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  check_cxx_source_compiles("
+  #if defined(_MSC_VER)
+  #include <intrin.h>
+  #else  // !defined(_MSC_VER)
+  #include <cpuid.h>
+  #include <nmmintrin.h>
+  #endif  // defined(_MSC_VER)
 
-int main() {
-  _mm_crc32_u8(0, 0); _mm_crc32_u32(0, 0);
-#if defined(_M_X64) || defined(__x86_64__)
-   _mm_crc32_u64(0, 0);
-#endif // defined(_M_X64) || defined(__x86_64__)
-  return 0;
-}
-"  HAVE_SSE42)
-set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+  int main() {
+    _mm_crc32_u8(0, 0); _mm_crc32_u32(0, 0);
+  #if defined(_M_X64) || defined(__x86_64__)
+     _mm_crc32_u64(0, 0);
+  #endif // defined(_M_X64) || defined(__x86_64__)
+    return 0;
+  }
+  "  HAVE_SSE42)
+  set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+else()
+  set(HAVE_SSE42 0)
+endif()
 
 # Check for ARMv8 w/ CRC and CRYPTO extensions support in the compiler.
-set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  # TODO(pwnall): Insert correct flag when VS gets ARM CRC32C support.
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /arch:NOTYET")
-else(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=armv8-a+crc+crypto")
-endif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-check_cxx_source_compiles("
-#include <arm_acle.h>
-#include <arm_neon.h>
+if(CRC32C_TARGET_ARM64)
+  set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # TODO(pwnall): Insert correct flag when VS gets ARM CRC32C support.
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} /arch:NOTYET")
+  else(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=armv8-a+crc+crypto")
+  endif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  check_cxx_source_compiles("
+  #include <arm_acle.h>
+  #include <arm_neon.h>
 
-int main() {
-  __crc32cb(0, 0); __crc32ch(0, 0); __crc32cw(0, 0); __crc32cd(0, 0);
-  vmull_p64(0, 0);
-  return 0;
-}
-" HAVE_ARM64_CRC32C)
-set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+  int main() {
+    __crc32cb(0, 0); __crc32ch(0, 0); __crc32cw(0, 0); __crc32cd(0, 0);
+    vmull_p64(0, 0);
+    return 0;
+  }
+  " HAVE_ARM64_CRC32C)
+  set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+else()
+  set(HAVE_ARM64_CRC32C 0)
+endif()
 
 # Check for strong getauxval() support in the system headers.
-check_cxx_source_compiles("
-#include <arm_acle.h>
-#include <arm_neon.h>
-#include <sys/auxv.h>
+if(CRC32C_TARGET_ARM64)
+  check_cxx_source_compiles("
+  #include <arm_acle.h>
+  #include <arm_neon.h>
+  #include <sys/auxv.h>
 
-int main() {
-  getauxval(AT_HWCAP);
-  return 0;
-}
-" HAVE_STRONG_GETAUXVAL)
+  int main() {
+    getauxval(AT_HWCAP);
+    return 0;
+  }
+  " HAVE_STRONG_GETAUXVAL)
+else()
+  set(HAVE_STRONG_GETAUXVAL 0)
+endif()
 
 # Check for weak getauxval() support in the compiler.
-check_cxx_source_compiles("
-unsigned long getauxval(unsigned long type) __attribute__((weak));
-#define AT_HWCAP 16
+if(CRC32C_TARGET_ARM64)
+  check_cxx_source_compiles("
+  unsigned long getauxval(unsigned long type) __attribute__((weak));
+  #define AT_HWCAP 16
 
-int main() {
-  getauxval(AT_HWCAP);
-  return 0;
-}
-" HAVE_WEAK_GETAUXVAL)
+  int main() {
+    getauxval(AT_HWCAP);
+    return 0;
+  }
+  " HAVE_WEAK_GETAUXVAL)
+else()
+  set(HAVE_WEAK_GETAUXVAL 0)
+endif()
 
 if(CRC32C_USE_GLOG)
   # glog requires this setting to avoid using dynamic_cast.
