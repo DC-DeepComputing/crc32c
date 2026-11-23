@@ -22,6 +22,9 @@
 // the vmull_p64 intrinsics.
 #cmakedefine01 HAVE_ARM64_CRC32C
 
+// Define to 1 if targeting RISC-V 64 and the compiler has Zvbc/Zbc intrinsics.
+#cmakedefine01 HAVE_RISCV_ZVBC
+
 // Define to 1 if the system libraries have the getauxval function in the
 // <sys/auxv.h> header. Should be true on Linux and Android API level 20+.
 #cmakedefine01 HAVE_STRONG_GETAUXVAL

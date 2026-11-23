@@ -156,6 +156,26 @@ int main() {
 " HAVE_ARM64_CRC32C)
 set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
 
+# Check for RISC-V 64 with Zvbc (vector carry-less multiply) and Zbc.
+set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=rv64gcv_zvl256b_zvbc_zbc")
+check_cxx_source_compiles("
+#if !defined(__riscv) || !defined(__riscv_xlen) || __riscv_xlen != 64
+#error not rv64
+#endif
+#if !defined(__riscv_zvbc) || !defined(__riscv_zbc)
+#error no zvbc/zbc
+#endif
+#include <riscv_vector.h>
+int main() {
+  vuint64m2_t v = __riscv_vmv_v_x_u64m2(0, 4);
+  unsigned long out[4];
+  __riscv_vse64(out, __riscv_vclmul_vv_u64m2(v, v, 4), 4);
+  return (int)out[0];
+}
+" HAVE_RISCV_ZVBC)
+set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
+
 # Check for strong getauxval() support in the system headers.
 check_cxx_source_compiles("
 #include <arm_acle.h>
@@ -262,6 +282,21 @@ if(BUILD_SHARED_LIBS)
   set_property(TARGET crc32c_sse42 PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 endif(BUILD_SHARED_LIBS)
 
+# RISC-V Zvbc CRC32C code is built separately with the Zvbc/Zbc ISA flags.
+add_library(crc32c_riscv OBJECT "")
+target_sources(crc32c_riscv
+  PRIVATE
+    "${PROJECT_BINARY_DIR}/include/crc32c/crc32c_config.h"
+    "src/crc32c_riscv.cc"
+    "src/crc32c_riscv.h"
+)
+if(HAVE_RISCV_ZVBC)
+  target_compile_options(crc32c_riscv PRIVATE "-march=rv64gcv_zvl256b_zvbc_zbc")
+endif(HAVE_RISCV_ZVBC)
+if(BUILD_SHARED_LIBS)
+  set_property(TARGET crc32c_riscv PROPERTY POSITION_INDEPENDENT_CODE TRUE)
+endif(BUILD_SHARED_LIBS)
+
 # Must be included before CMAKE_INSTALL_INCLUDEDIR is used.
 include(GNUInstallDirs)
 
@@ -270,6 +305,7 @@ add_library(crc32c ""
   # section of target_sources when cmake_minimum_required becomes 3.9 or above.
   $<TARGET_OBJECTS:crc32c_arm64>
   $<TARGET_OBJECTS:crc32c_sse42>
+  $<TARGET_OBJECTS:crc32c_riscv>
 )
 target_sources(crc32c
   PRIVATE
@@ -283,6 +319,8 @@ target_sources(crc32c
     "src/crc32c_round_up.h"
     "src/crc32c_sse42.h"
     "src/crc32c_sse42_check.h"
+    "src/crc32c_riscv.h"
+    "src/crc32c_riscv_check.h"
     "src/crc32c.cc"
 
   # Only CMake 3.3+ supports PUBLIC sources in targets exported by "install".
